@@ -369,18 +369,15 @@ def renderizar_reel(max_seg=150):
     return True
 
 
-def codificar_reel(preset='veryfast'):
+def codificar_reel():
+    # ultrafast y un solo hilo: con presets más lentos o más hilos el sandbox se queda sin memoria y se reinicia
     salida = f'{REEL_DIR}/reel.mp4'
     cmd = [_ff(), '-y', '-hide_banner', '-loglevel', 'error', '-framerate', str(FPS), '-i', f'{REEL_DIR}/frames/f%05d.jpg',
-           '-i', _R['audio'], '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-preset', preset, '-crf', '21',
-           '-pix_fmt', 'yuv420p', '-threads', '2', '-c:a', 'aac', '-b:a', '160k', '-shortest', '-movflags', '+faststart', salida]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=165)
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"ffmpeg tardó demasiado con preset {preset}: llama a codificar_reel('ultrafast') en otra celda")
+           '-i', _R['audio'], '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'stillimage',
+           '-crf', '20', '-pix_fmt', 'yuv420p', '-threads', '1', '-c:a', 'aac', '-b:a', '160k', '-shortest',
+           '-movflags', '+faststart', salida]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=170)
     if r.returncode:
-        if preset != 'ultrafast':
-            raise RuntimeError(f"ffmpeg falló con {preset} ({r.stderr[-300:]}): llama a codificar_reel('ultrafast') en otra celda")
         raise RuntimeError(r.stderr[-500:])
     return salida
 
