@@ -18,7 +18,7 @@
 #               spec["musica"] = False para quitar la base musical (por defecto va, generada por código y sin derechos).
 # Una slide noticia sin imagen reutiliza la ilustración de la portada.
 
-import asyncio, math, re, shutil, subprocess, sys, time, wave
+import asyncio, io, math, re, shutil, subprocess, sys, time, wave
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
@@ -359,7 +359,11 @@ def renderizar_reel(max_seg=150):
         elif i > 0 and lt < 0.2 and _R['previo'] is not None:  # fundido corto entre escenas
             img = Image.blend(_R['previo'], img, lt / 0.2)
         _barra(img, i, min(1, lt / e['dur']), len(E))
-        img.save(f'{REEL_DIR}/frames/f{n:05d}.jpg', 'JPEG', quality=88)
+        # se guarda a través de BytesIO: con img.save(ruta) el workbench muestra cada fotograma en la salida
+        buf = io.BytesIO()
+        img.save(buf, 'JPEG', quality=88)
+        with open(f'{REEL_DIR}/frames/f{n:05d}.jpg', 'wb') as fh:
+            fh.write(buf.getvalue())
         _R['ultimo'] = img
         _R['siguiente'] += 1
     return True
