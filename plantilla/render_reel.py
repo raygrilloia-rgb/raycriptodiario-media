@@ -14,7 +14,7 @@
 #
 # spec: el mismo del carrusel, con un campo "voz" en cada slide: lo que dice Álvaro (1-2 frases cortas).
 #   Opcionales: "imagen_reel" en una slide (ilustración vertical que sustituye a "imagen"),
-#               spec["voz_reel"] = {"nombre": "es-ES-AlvaroNeural", "rate": "+12%", "pitch": "+2Hz"},
+#               spec["voz_reel"] = {"nombre": "es-ES-AlvaroNeural", "rate": "+20%", "pitch": "+2Hz"},
 #               spec["musica"] = False para quitar la base musical (por defecto va, generada por código y sin derechos).
 # Una slide noticia sin imagen reutiliza la ilustración de la portada.
 
@@ -25,8 +25,8 @@ from concurrent.futures import ThreadPoolExecutor
 RW, RH, FPS = 1080, 1920, 30
 REEL_DIR = '/tmp/reel'
 RTXT = RW - M - 150        # ancho del texto: a la derecha van los botones de Instagram
-IMG_H = 1100               # alto de la zona de la ilustración
-VOZ_REEL = {'nombre': 'es-ES-AlvaroNeural', 'rate': '+12%', 'pitch': '+2Hz'}
+IMG_H = 1150               # alto de la zona de la ilustración
+VOZ_REEL = {'nombre': 'es-ES-AlvaroNeural', 'rate': '+20%', 'pitch': '+2Hz'}
 CLARO = (226, 232, 242)
 _R = {}
 
@@ -207,26 +207,26 @@ def _preparar_escena(e, spec, portada_img):
         ov.alpha_composite(_degradado(RW, 300, BG, 210).transpose(Image.FLIP_TOP_BOTTOM), (0, 0))
         e['_ov'] = ov
         chip = _capa_chip(e.get('etiqueta', 'ÚLTIMA HORA' if tipo == 'portada' else 'NOTICIA'), color)
-        capas.append((chip, M, 990, 0.0, 0.25, 'fade'))
+        capas.append((chip, M, 1045, 0.0, 0.25, 'fade'))
         if tipo == 'portada':
             t = _capa_texto(e['titulo'], 'Montserrat', 'ExtraBold', 96, RTXT, 4, 64, WHITE, 1.06)
         else:
-            t = _capa_texto(e['titulo'], 'Montserrat', 'ExtraBold', 76, RTXT, 3, 52, WHITE, 1.08)
-        capas.append((t, M, 1080, 0.08, 0.35, 'fade'))
+            t = _capa_texto(e['titulo'], 'Montserrat', 'ExtraBold', 84, RTXT, 3, 56, WHITE, 1.08)
+        capas.append((t, M, 1130, 0.08, 0.35, 'fade'))
         if e.get('subtitulo'):
             s = _capa_texto(e['subtitulo'], 'Inter', 'Regular', 42, RTXT, 4, 32, CLARO, 1.3)
-            capas.append((s, M, 1080 + t.height + 24, 0.4, 0.35, 'fade'))
+            capas.append((s, M, 1130 + t.height + 24, 0.4, 0.35, 'fade'))
     elif tipo == 'dato':
         fondo = Image.new('RGBA', (RW, RH), BG + (255,))
         halo = Image.new('RGBA', (RW, RH), BG + (0,))
-        ImageDraw.Draw(halo).ellipse((RW // 2 - 480, 420, RW // 2 + 480, 1120), fill=color + (70,))
+        ImageDraw.Draw(halo).ellipse((RW // 2 - 480, 560, RW // 2 + 480, 1260), fill=color + (70,))
         fondo.alpha_composite(halo.filter(ImageFilter.GaussianBlur(150)))
         e['_fijo'] = fondo.convert('RGB')
         chip = _capa_chip(e.get('etiqueta', 'EL DATO'), color)
-        capas.append((chip, M, 380, 0.0, 0.25, 'fade'))
+        capas.append((chip, M, 520, 0.0, 0.25, 'fade'))
         num = _capa_texto(e['dato'], 'Montserrat', 'ExtraBold', 220, RW - 2 * M, 2, 110, color, 1.0)
-        capas.append((num, M, 480, 0.1, 0.45, 'pop'))
-        y = 480 + num.height + 30
+        capas.append((num, M, 620, 0.1, 0.45, 'pop'))
+        y = 620 + num.height + 30
         barra = Image.new('RGBA', (120, 10), color + (255,))
         capas.append((barra, M, y, 0.35, 0.3, 'fade'))
         t = _capa_texto(e['titulo'], 'Montserrat', 'ExtraBold', 72, RTXT, 3, 48, WHITE, 1.08)
@@ -240,17 +240,17 @@ def _preparar_escena(e, spec, portada_img):
         da = ImageDraw.Draw(anillo)
         da.ellipse((5, 5, 195, 195), outline=ORANGE, width=7)
         da.text((100, 100), '₿', font=font('Montserrat', 'ExtraBold', 116), fill=ORANGE, anchor='mm')
-        capas.append((anillo, RW // 2 - 100, 360, 0.0, 0.4, 'pop'))
+        capas.append((anillo, RW // 2 - 100, 480, 0.0, 0.4, 'pop'))
         t = _capa_texto(e.get('titulo', 'Síguenos para estar al día'), 'Montserrat', 'ExtraBold', 80, RW - 2 * M, 3, 54, WHITE, 1.1, True)
-        capas.append((t, M, 640, 0.15, 0.35, 'fade'))
-        y = 640 + t.height + 30
+        capas.append((t, M, 760, 0.15, 0.35, 'fade'))
+        y = 760 + t.height + 30
         h = _capa_texto(spec.get('handle', '@raycriptodiario'), 'Montserrat', 'ExtraBold', 60, RW - 2 * M, 1, 40, ORANGE, 1.1, True)
         capas.append((h, M, y, 0.35, 0.35, 'fade'))
         sub = e.get('subtitulo', 'Guarda este post y compártelo con quien esté empezando en cripto')
         s = _capa_texto(sub, 'Inter', 'Regular', 38, RW - 2 * M - 80, 3, 30, CLARO, 1.35, True)
         capas.append((s, M + 40, y + h.height + 40, 0.55, 0.35, 'fade'))
         dy = _capa_texto('Esto no es consejo financiero · DYOR', 'Inter', 'Medium', 30, RW - 2 * M, 1, 24, MUTED, 1.2, True)
-        capas.append((dy, M, 1480, 0.7, 0.35, 'fade'))
+        capas.append((dy, M, 1500, 0.7, 0.35, 'fade'))
     e['_capas'] = capas
 
 
