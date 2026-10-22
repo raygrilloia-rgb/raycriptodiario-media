@@ -12,7 +12,9 @@
 #   mp4 = codificar_reel()
 #   ref = subir_video(mp4)         # {name, mimetype: "video/mp4", s3key} para video_file
 #
-# spec: el mismo del carrusel, con un campo "voz" en cada slide: lo que dice Álvaro (1-2 frases cortas).
+# spec: el mismo del carrusel. Solo entran en el reel las slides con campo "voz" (lo que dice Álvaro, máx. 10 palabras):
+#   lo normal son 5 (portada, qué pasó, dato, qué significa para ti y cierre), para un reel de 15-20 s.
+#   La portada se ve desde el primer fotograma y la voz la acompaña con subtítulos palabra a palabra.
 #   Opcionales: "imagen_reel" en una slide (ilustración vertical que sustituye a "imagen"),
 #               spec["voz_reel"] = {"nombre": "es-ES-AlvaroNeural", "rate": "+20%", "pitch": "+2Hz"},
 #               spec["musica"] = False para quitar la base musical (por defecto va, generada por código y sin derechos).
@@ -51,11 +53,36 @@ def _dur(f):
 
 # ---------- voz ----------
 def _tts(texto, mp3, voz):
+    # Devuelve [(inicio_s, fin_s, palabra)] con el momento de cada palabra, para los subtítulos.
     edge_tts = _pip('edge_tts', 'edge-tts')
+    palabras = []
 
     async def go():
-        await edge_tts.Communicate(texto, voz['nombre'], rate=voz['rate'], pitch=voz['pitch']).save(mp3)
+        try:
+            c = edge_tts.Communicate(texto, voz['nombre'], rate=voz['rate'], pitch=voz['pitch'], boundary='WordBoundary')
+        except TypeError:  # versiones antiguas: siempre dan WordBoundary
+            c = edge_tts.Communicate(texto, voz['nombre'], rate=voz['rate'], pitch=voz['pitch'])
+        with open(mp3, 'wb') as f:
+            async for ch in c.stream():
+                if ch['type'] == 'audio':
+                    f.write(ch['data'])
+                elif ch['type'] == 'WordBoundary':
+                    ini = ch['offset'] / 1e7
+                    palabras.append((ini, ini + ch['duration'] / 1e7, ch['text']))
     asyncio.run(go())  # se llama desde un hilo, así no choca con el bucle de Jupyter
+    return palabras
+
+
+def _palabras_repartidas(texto, dur):
+    # Si Edge no da los tiempos de cada palabra, se reparten según su longitud.
+    ps = texto.split()
+    total = sum(len(p) + 2 for p in ps) or 1
+    t, out = 0.0, []
+    for p in ps:
+        d = dur * (len(p) + 2) / total
+        out.append((t, t + d, p))
+        t += d
+    return out
 
 
 def _locucion(i, texto, voz):
@@ -63,7 +90,7 @@ def _locucion(i, texto, voz):
     err = None
     for _ in range(2):
         try:
-            _tts(texto, mp3, voz)
+            palabras = _tts(texto, mp3, voz)
             err = None
             break
         except Exception as e:
@@ -71,11 +98,12 @@ def _locucion(i, texto, voz):
             time.sleep(2)
     if err:
         raise err
-    # Edge deja casi 1 s de pausa en los ":" y "…" y al final: se recortan a 0,2 s para que el reel tenga ritmo.
+    # Solo se recorta el silencio del final: si se recortaran las pausas de dentro,
+    # los tiempos de las palabras dejarían de coincidir con los subtítulos.
     subprocess.run([_ff(), '-y', '-hide_banner', '-loglevel', 'error', '-i', mp3, '-af',
-                    'silenceremove=start_periods=1:start_threshold=-42dB:stop_periods=-1:stop_duration=0.2'
-                    ':stop_threshold=-42dB:stop_silence=0.18,aresample=48000', '-ac', '1', wav], check=True)
-    return wav
+                    'areverse,silenceremove=start_periods=1:start_threshold=-42dB:start_silence=0.12,areverse,aresample=48000',
+                    '-ac', '1', wav], check=True)
+    return wav, palabras
 
 
 # ---------- música: base tranquila generada por código (sin derechos de autor) ----------
@@ -207,15 +235,16 @@ def _preparar_escena(e, spec, portada_img):
         ov.alpha_composite(_degradado(RW, 300, BG, 210).transpose(Image.FLIP_TOP_BOTTOM), (0, 0))
         e['_ov'] = ov
         chip = _capa_chip(e.get('etiqueta', 'ÚLTIMA HORA' if tipo == 'portada' else 'NOTICIA'), color)
-        capas.append((chip, M, 1045, 0.0, 0.25, 'fade'))
+        # La portada es el gancho: titular visible desde el primer fotograma, sin fundido ni destello.
+        # El subtítulo de la slide no va en el reel: lo sustituyen los subtítulos de la voz.
+        modo = 'fijo' if tipo == 'portada' else 'fade'
+        capas.append((chip, M, 1045, 0.0, 0.25, modo))
         if tipo == 'portada':
-            t = _capa_texto(e['titulo'], 'Montserrat', 'ExtraBold', 96, RTXT, 4, 64, WHITE, 1.06)
+            t = _capa_texto(e['titulo'], 'Montserrat', 'ExtraBold', 100, RTXT, 4, 64, WHITE, 1.06)
         else:
             t = _capa_texto(e['titulo'], 'Montserrat', 'ExtraBold', 84, RTXT, 3, 56, WHITE, 1.08)
-        capas.append((t, M, 1130, 0.08, 0.35, 'fade'))
-        if e.get('subtitulo'):
-            s = _capa_texto(e['subtitulo'], 'Inter', 'Regular', 42, RTXT, 4, 32, CLARO, 1.3)
-            capas.append((s, M, 1130 + t.height + 24, 0.4, 0.35, 'fade'))
+        capas.append((t, M, 1130, 0.08, 0.35, modo))
+        e['_sub_y'] = 860
     elif tipo == 'dato':
         fondo = Image.new('RGBA', (RW, RH), BG + (255,))
         halo = Image.new('RGBA', (RW, RH), BG + (0,))
@@ -234,6 +263,7 @@ def _preparar_escena(e, spec, portada_img):
         if e.get('subtitulo'):
             s = _capa_texto(e['subtitulo'], 'Inter', 'Regular', 42, RTXT, 4, 32, CLARO, 1.3)
             capas.append((s, M, y + 50 + t.height + 20, 0.6, 0.35, 'fade'))
+        e['_sub_y'] = 1360
     else:  # cierre
         e['_fijo'] = Image.new('RGB', (RW, RH), BG)
         anillo = Image.new('RGBA', (200, 200), (0, 0, 0, 0))
@@ -246,12 +276,46 @@ def _preparar_escena(e, spec, portada_img):
         y = 760 + t.height + 30
         h = _capa_texto(spec.get('handle', '@raycriptodiario'), 'Montserrat', 'ExtraBold', 60, RW - 2 * M, 1, 40, ORANGE, 1.1, True)
         capas.append((h, M, y, 0.35, 0.35, 'fade'))
-        sub = e.get('subtitulo', 'Guarda este post y compártelo con quien esté empezando en cripto')
-        s = _capa_texto(sub, 'Inter', 'Regular', 38, RW - 2 * M - 80, 3, 30, CLARO, 1.35, True)
-        capas.append((s, M + 40, y + h.height + 40, 0.55, 0.35, 'fade'))
         dy = _capa_texto('Esto no es consejo financiero · DYOR', 'Inter', 'Medium', 30, RW - 2 * M, 1, 24, MUTED, 1.2, True)
         capas.append((dy, M, 1500, 0.7, 0.35, 'fade'))
+        e['_sub_y'] = 1290
     e['_capas'] = capas
+
+
+# ---------- subtítulos de la voz (la mayoría ve los reels sin sonido) ----------
+_FSUB = {}
+
+
+def _bloques_sub(palabras, desfase, por_bloque=3):
+    # Agrupa las palabras de 3 en 3; cada bloque se ve desde su primera palabra hasta que empieza el siguiente.
+    bloques = []
+    for k in range(0, len(palabras), por_bloque):
+        grupo = [(a + desfase, b + desfase, p) for a, b, p in palabras[k:k + por_bloque]]
+        bloques.append([grupo[0][0], grupo[-1][1] + 0.35, grupo])
+    for k in range(len(bloques) - 1):
+        bloques[k][1] = bloques[k + 1][0]
+    return bloques
+
+
+def _subtitulo(c, e, lt):
+    bloque = next((b for b in e.get('_subs', []) if b[0] <= lt < b[1]), None)
+    if not bloque:
+        return
+    d = ImageDraw.Draw(c)
+    size = 66
+    while True:
+        f = _FSUB.get(size) or _FSUB.setdefault(size, font('Montserrat', 'ExtraBold', size))
+        esp = d.textlength(' ', font=f)
+        anchos = [d.textlength(p, font=f) for _, _, p in bloque[2]]
+        total = sum(anchos) + esp * (len(anchos) - 1)
+        if total <= RW - 2 * M or size <= 44:
+            break
+        size -= 4
+    x, y = (RW - total) / 2, e['_sub_y']
+    for (a, b, p), w in zip(bloque[2], anchos):
+        actual = a <= lt < b + 0.08
+        d.text((x, y), p, font=f, fill=ORANGE if actual else WHITE, stroke_width=7, stroke_fill=(0, 0, 0))
+        x += w + esp
 
 
 def _frame(e, lt):
@@ -269,7 +333,7 @@ def _frame(e, lt):
         c.paste(e['_ov'], (0, 0), e['_ov'])
     c.paste(e['_cab'], (0, 78), e['_cab'])
     for im, x, y, t0, d, modo in e['_capas']:
-        k = max(0.0, min(1.0, (lt - t0) / d))
+        k = 1.0 if modo == 'fijo' else max(0.0, min(1.0, (lt - t0) / d))
         if k <= 0:
             continue
         if k >= 1:
@@ -282,6 +346,7 @@ def _frame(e, lt):
         else:
             a = im.getchannel('A').point(lambda v: round(v * k))
             c.paste(im, (x, y + round((1 - _ease(k)) * 40)), a)
+    _subtitulo(c, e, lt)
     return c
 
 
@@ -305,23 +370,27 @@ def preparar_reel(spec):
     shutil.rmtree(REEL_DIR, ignore_errors=True)
     os.makedirs(REEL_DIR + '/frames')
     voz = {**VOZ_REEL, **spec.get('voz_reel', {})}
-    escenas = [dict(s) for s in spec['slides']]
-    with ThreadPoolExecutor(4) as ex:
+    # Solo entran en el reel las slides con "voz" (lo normal: 5 de las 7 del carrusel, para 15-20 s).
+    escenas = [dict(s) for s in spec['slides'] if s.get('voz')] or [dict(s) for s in spec['slides']]
+    with ThreadPoolExecutor(5) as ex:
         futs = {i: ex.submit(_locucion, i, e['voz'], voz) for i, e in enumerate(escenas) if e.get('voz')}
         portada_src = escenas[0].get('imagen_reel') or escenas[0].get('imagen')
         f_portada = ex.submit(_imagen, portada_src) if portada_src else None
         for i, f in futs.items():
             try:
-                escenas[i]['wav'] = f.result()
+                escenas[i]['wav'], escenas[i]['_palabras'] = f.result()
                 escenas[i]['voz_dur'] = _dur(escenas[i]['wav'])
             except Exception as err:
                 escenas[i]['error_voz'] = str(err)[:200]
         portada_img = f_portada.result() if f_portada else None
     t = 0.0
     for i, e in enumerate(escenas):
-        arranque = 0.15 if i == 0 else 0.25
+        arranque = 0.05 if i == 0 else 0.2  # la voz del gancho empieza ya
         e['ini'], e['voz_ini'] = t, t + arranque
-        e['dur'] = max(3.2 if e['tipo'] == 'cierre' else 2.4, arranque + e.get('voz_dur', 0) + 0.35)
+        e['dur'] = max(2.8 if e['tipo'] == 'cierre' else 2.0, arranque + e.get('voz_dur', 0) + 0.3)
+        if e.get('wav'):
+            palabras = e.get('_palabras') or _palabras_repartidas(e['voz'], e['voz_dur'])
+            e['_subs'] = _bloques_sub(palabras, arranque)
         t += e['dur']
     total = t + 0.3
     escenas[-1]['dur'] += 0.3
@@ -333,7 +402,7 @@ def preparar_reel(spec):
     _R.update(escenas=escenas, total=total, nframes=math.ceil(total * FPS), siguiente=0,
               actual=0, previo=None, ultimo=None, audio=audio)
     return {'duracion_s': round(total, 1), 'fotogramas': _R['nframes'],
-            'thumb_offset_ms': 900,  # portada con el titular ya visible
+            'thumb_offset_ms': 500,  # portada con el titular ya visible
             'escenas': [(e['tipo'], round(e['dur'], 1), 'voz ok' if e.get('wav') else e.get('error_voz', 'sin voz'))
                         for e in escenas]}
 
@@ -354,9 +423,7 @@ def renderizar_reel(max_seg=150):
         e = E[i]
         lt = t - e['ini']
         img = _frame(e, lt)
-        if i == 0 and lt < 0.25:  # destello de entrada
-            img = Image.blend(img, Image.new('RGB', (RW, RH), WHITE), 0.7 * (1 - lt / 0.25))
-        elif i > 0 and lt < 0.2 and _R['previo'] is not None:  # fundido corto entre escenas
+        if i > 0 and lt < 0.2 and _R['previo'] is not None:  # fundido corto entre escenas
             img = Image.blend(_R['previo'], img, lt / 0.2)
         _barra(img, i, min(1, lt / e['dur']), len(E))
         # se guarda a través de BytesIO: con img.save(ruta) el workbench muestra cada fotograma en la salida
