@@ -6,9 +6,9 @@ Funcionamiento (desde el 21-10):
 
 Para añadir vídeos: pon su nombre al final de la lista (sin `.mp4`). El .mp4 y el .txt tienen que estar en esta carpeta.
 
-1. cur_04_mineirazo
-2. cur_05_zidane
-3. cur_06_maradona86
+1. cur_07_baggio
+2. quiz_01_siete_goles
+3. cur_08_iniesta
 
-Ya publicados (no volver a subir): cur_01_ceni, cur_02_maracanazo, cur_03_dos_balones, 08_penalti_10s, 02_mundiales_facil, 03_leyendas_medio y 04_clubes_dificil.
+Ya publicados (no volver a subir): cur_04_mineirazo, cur_05_zidane, cur_06_maradona86, cur_01_ceni, cur_02_maracanazo, cur_03_dos_balones, 08_penalti_10s, 02_mundiales_facil, 03_leyendas_medio y 04_clubes_dificil.
 Fuera de la cola: 05_jugador_facil, 06_jugador_medio y 07_jugador_dificil (formato quiz, no funcionó).
