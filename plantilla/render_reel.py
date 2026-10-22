@@ -98,6 +98,10 @@ def _locucion(i, texto, voz):
             time.sleep(2)
     if err:
         raise err
+    # Edge devuelve las palabras sin signos ("Sabías" en vez de "¿Sabías"): si cuadran, se usa el texto original.
+    originales = texto.split()
+    if len(originales) == len(palabras):
+        palabras = [(a, b, o) for (a, b, _), o in zip(palabras, originales)]
     # Solo se recorta el silencio del final: si se recortaran las pausas de dentro,
     # los tiempos de las palabras dejarían de coincidir con los subtítulos.
     subprocess.run([_ff(), '-y', '-hide_banner', '-loglevel', 'error', '-i', mp3, '-af',
@@ -260,10 +264,7 @@ def _preparar_escena(e, spec, portada_img):
         capas.append((barra, M, y, 0.35, 0.3, 'fade'))
         t = _capa_texto(e['titulo'], 'Montserrat', 'ExtraBold', 72, RTXT, 3, 48, WHITE, 1.08)
         capas.append((t, M, y + 50, 0.4, 0.35, 'fade'))
-        if e.get('subtitulo'):
-            s = _capa_texto(e['subtitulo'], 'Inter', 'Regular', 42, RTXT, 4, 32, CLARO, 1.3)
-            capas.append((s, M, y + 50 + t.height + 20, 0.6, 0.35, 'fade'))
-        e['_sub_y'] = 1360
+        e['_sub_y'] = min(1420, y + 50 + t.height + 50)  # subtítulos justo debajo del contenido
     else:  # cierre
         e['_fijo'] = Image.new('RGB', (RW, RH), BG)
         anillo = Image.new('RGBA', (200, 200), (0, 0, 0, 0))
@@ -302,7 +303,7 @@ def _subtitulo(c, e, lt):
     if not bloque:
         return
     d = ImageDraw.Draw(c)
-    size = 66
+    size = 74
     while True:
         f = _FSUB.get(size) or _FSUB.setdefault(size, font('Montserrat', 'ExtraBold', size))
         esp = d.textlength(' ', font=f)
